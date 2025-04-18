@@ -1,10 +1,11 @@
-from data_provider.data_loader import FinanceFuturesDataset, Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_M4, PSMSegLoader, \
+from data_provider.data_loader import FinanceVerticalIteration, FinanceHorizontalIteration, Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_M4, PSMSegLoader, \
     MSLSegLoader, SMAPSegLoader, SMDSegLoader, SWATSegLoader, UEAloader
 from data_provider.uea import collate_fn
 from torch.utils.data import DataLoader
 
 data_dict = {
-    'Futures': FinanceFuturesDataset,
+    'FinanceVertical': FinanceVerticalIteration,
+    'FinanceHorizontal': FinanceHorizontalIteration,
     'ETTh1': Dataset_ETT_hour,
     'ETTh2': Dataset_ETT_hour,
     'ETTm1': Dataset_ETT_minute,

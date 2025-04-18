@@ -18,7 +18,156 @@ from finance_collection.simple_calcs import date_interpreter
 warnings.filterwarnings('ignore')
 
 
-class FinanceFuturesDataset(Dataset):
+class FinanceVerticalIteration(Dataset):
+    def __init__(self, args, root_path, flag='train', size=None, features='MS',
+                 data_path='', target='target_returns', scale=True, timeenc=0,
+                 freq='d', seasonal_patterns=None):
+
+        self.args = args
+        self.args.start_date = date_interpreter(args.start_date)
+        self.args.end_date = date_interpreter(args.end_date)
+
+        self.seq_len = args.seq_len
+        self.label_len = args.label_len
+        self.pred_len = args.pred_len
+
+        assert flag in ['train', 'test', 'val']
+        type_map = {'train': 0, 'val': 1, 'test': 2}
+        self.set_type = type_map[flag]
+
+        self.features = features
+        self.target = target
+        self.scale = scale
+        self.timeenc = timeenc
+        self.freq = freq
+
+        self.root_path = root_path
+        self.tickers = []
+        self.tickers_left = []
+        self.data = dict()
+        self.total_len = 0
+        self.data_prev_len = 0
+        self.the_ticker = None
+        self.ticker_indices = dict()
+        self.ticker_lengths = dict()
+        self.global_to_local = dict()
+        self.__read_data__()
+        self.__build_index_mapping__()
+
+    def __read_data__(self):
+        self.scaler = StandardScaler()
+
+        files = glob.glob(os.path.join(self.root_path, 'quandl_cpd_nonelbw_*.csv'))
+        cols_data = None
+        dates = set()
+        for file in files[:4]:
+            df = pd.read_csv(file, parse_dates=['Date'])
+            if not len(df):
+                continue
+            ticker = os.path.basename(file).split('_')[-1].split('.')[0]
+            if cols_data is None:
+                cols_data = [col for col in df.columns if col != 'Date']
+            df = df[(df['Date'] >= self.args.start_date) & (df['Date'] <= self.args.end_date)]
+            df_data = df[cols_data]
+
+            if len(df_data) <= self.seq_len + self.pred_len + self.label_len:
+                continue
+
+            self.tickers.append(ticker)
+            self.tickers_left.append(ticker)
+            self.data[ticker] = dict()
+
+            num_train = int(len(df_data) * 0.7)
+            num_test = int(len(df_data) * 0.2)
+            num_vali = len(df_data) - num_train - num_test
+            border1s = [0, num_train - self.seq_len, len(df_data) - num_test - self.seq_len]
+            border2s = [num_train, num_train + num_vali, len(df_data)]
+            border1 = border1s[self.set_type]
+            border2 = border2s[self.set_type]
+
+            if self.scale:
+                train_data = df_data[border1s[0]:border2s[0]]
+                self.scaler.fit(train_data.values)
+                data = self.scaler.transform(df_data.values)
+            else:
+                data = df_data.values
+
+            df_stamp = df[['Date']][border1:border2]
+            df_stamp['Date'] = pd.to_datetime(df_stamp.Date)
+            dates.update(df_stamp['Date'].values)
+            self.data[ticker]['date_range'] = (df_stamp['Date'].min(), df_stamp['Date'].max())
+
+            if self.timeenc == 0:
+                df_stamp['month'] = df_stamp.Date.apply(lambda row: row.month, 1)
+                df_stamp['day'] = df_stamp.Date.apply(lambda row: row.day, 1)
+                df_stamp['weekday'] = df_stamp.Date.apply(lambda row: row.weekday(), 1)
+                df_stamp['hour'] = df_stamp.Date.apply(lambda row: row.hour, 1)
+                data_stamp = df_stamp.drop(['Date'], 1).values
+            elif self.timeenc == 1:
+                data_stamp = time_features(pd.to_datetime(df_stamp['Date'].values), freq=self.freq)
+                data_stamp = data_stamp.transpose(1, 0)
+
+            data_x = data[border1:border2]
+            data_y = data[border1:border2]
+            # self.total_len += border2 - border1 - self.seq_len - self.pred_len - 1
+
+            if self.set_type == 0 and self.args.augmentation_ratio > 0:
+                data_x, data_y, augmentation_tags = run_augmentation_single(data_x, data_y,
+                                                                                      self.args)
+
+            self.data[ticker]['data_x'] = data_x
+            self.data[ticker]['data_y'] = data_y
+            self.data[ticker]['data_stamp'] = data_stamp
+        self.keep_track_idx = -1
+        self.idx_map = dict()
+
+    def __build_index_mapping__(self):
+        """Create mapping from global indices to specific (ticker, local_index) pairs"""
+        global_idx = 0
+
+        # Process tickers in the order they should be used
+        for ticker in self.tickers:
+            data_len = len(self.data[ticker]['data_x']) - self.seq_len - self.pred_len # - 1
+            if data_len <= 0:
+                continue  # Skip tickers with insufficient data
+
+            self.ticker_indices[ticker] = global_idx
+            self.ticker_lengths[ticker] = data_len
+
+            # Map each global index to its corresponding ticker and local index
+            for local_idx in range(data_len):
+                self.global_to_local[global_idx] = (ticker, local_idx)
+                global_idx += 1
+
+        # Update total length based on actual valid indices
+        self.total_len = global_idx
+
+    def __getitem__(self, index):
+        ticker, local_idx = self.global_to_local[index]
+
+        data_x = self.data[ticker]['data_x']
+        data_y = self.data[ticker]['data_y']
+        data_stamp = self.data[ticker]['data_stamp']
+
+        s_begin = local_idx # i
+        s_end = s_begin + self.seq_len
+        r_begin = s_end - self.label_len
+        r_end = r_begin + self.label_len + self.pred_len
+
+        seq_x = data_x[s_begin:s_end]
+        seq_y = data_y[r_begin:r_end]
+        seq_x_mark = data_stamp[s_begin:s_end]
+        seq_y_mark = data_stamp[r_begin:r_end]
+
+        print(f"global index: {index}, local index: {local_idx}, ticker: {ticker}, x range: {s_begin}-{s_end}, y range: {r_begin}-{r_end}, seq_x shape: {seq_x.shape}, seq_y shape: {seq_y.shape}, seq_x_mark shape: {seq_x_mark.shape}, seq_y_mark shape: {seq_y_mark.shape}")
+
+        return seq_x, seq_y, seq_x_mark, seq_y_mark
+
+    def __len__(self):
+        return self.total_len
+
+
+class FinanceHorizontalIteration(Dataset):
     def __init__(self, args, root_path, flag='train', size=None, features='MS',
                  data_path='', target='target_returns', scale=True, timeenc=0,
                  freq='d', seasonal_patterns=None):
@@ -52,6 +201,8 @@ class FinanceFuturesDataset(Dataset):
         self.ticker_dict_use = dict()
         self.tickers = []
         self.data = {}
+        self.batch_seq = dict()
+        self.total_len = 0
         # self.dates = set()
         self.__read_data__()
 
@@ -125,6 +276,15 @@ class FinanceFuturesDataset(Dataset):
             self.data[ticker]['last_index'] = dates.index(self.data[ticker]['date_range'][1])
 
         self.first_idx = min([self.data[ticker]['first_index'] for ticker in self.tickers])
+        if self.first_idx != 0:
+            raise ValueError('The overall first index for dates inside the list of date should be the first date, and somehow it is not!! The fist index is:', self.first_idx)
+
+        required_period = self.seq_len + self.pred_len + 1
+        for i in range(len(dates)-self.pred_len):
+            for ticker in self.tickers:
+                if self.data[ticker]['first_index'] <= i and i + required_period < self.data[ticker]['last_index']:
+                    self.batch_seq[self.total_len] = [i, ticker] # Should be i - self.data[ticker]['first_index'] because we are starting inside data_x from index 0
+                    self.total_len += 1
             # df.set_index('date', inplace=True)
             # self.data[ticker] = df
             # self.dates.update(df.index)
@@ -136,67 +296,50 @@ class FinanceFuturesDataset(Dataset):
         # print(len(self.tickers))
 
     def __getitem__(self, index):
-        ticker = None
-        satisfied_ticker = False
-        i = int(index / len(self.tickers)) + self.first_idx - 1
-        j = 0
-        while not satisfied_ticker:
-            if j > len(self.tickers): # Iterated through all tickers and all dates were out of range => go to the next date
-                j = 0
-                i += 1
+        '''
+        SEE BELOW what is causeing the ERROR!!
+        Must do debug which will throw the error in the for-loop at the training!
+        RECALL FOR THE VERTICAL WE SET SHUFFLE FLAG TO FALSE!!
+        '''
+        i, ticker = self.batch_seq[index]
 
-            if not self.ticker_dict_use[self.tickers[-1]]:  # If last ticker was used then reset all to True
-                for t in self.tickers:
-                    self.ticker_dict_use[t] = True
+        data_x = self.data[ticker]['data_x']
+        data_y = self.data[ticker]['data_y']
+        data_stamp = self.data[ticker]['data_stamp']
 
-            for t in self.tickers:                                      # Look for the next ticker that was not used
-                if self.ticker_dict_use.get(t):
-                    ticker = t
-                    self.ticker_dict_use[t] = False
-                    break
-            j += 1
+        # print("SUCCESSFULLY LOADED TICKER: ", ticker)
+        s_begin = i
+        # s_begin = i - self.data[ticker]['first_index']
+        s_end = s_begin + self.seq_len
+        r_begin = s_end - self.label_len
+        r_end = r_begin + self.label_len + self.pred_len
 
-            if self.data[ticker]['first_index'] > i or self.data[ticker]['last_index'] <= self.seq_len + self.pred_len + i:  # date (expressed via index) must be in the range date available for this asset
-                continue
+        seq_x = data_x[s_begin:s_end]
+        seq_y = data_y[r_begin:r_end]       # ERRORs HERE!! This becomes a Tensor of size [32, 21, 1] instead of [32, 21, 19] which causes a: RuntimeError: Trying to resize storage that is not resizable
+        seq_x_mark = data_stamp[s_begin:s_end]
+        seq_y_mark = data_stamp[r_begin:r_end]
 
-            data_x = self.data[ticker]['data_x']
-            data_y = self.data[ticker]['data_y']
-            data_stamp = self.data[ticker]['data_stamp']
+        # if seq_x.shape[0] != self.seq_len or seq_y.shape[0] != self.label_len + self.pred_len:
+    #     continue
 
-            # if not self.data[ticker]['first_index'] <= i <= self.data[ticker]['last_index']:
-                # print(f"index {i} out of range for {ticker} since first index is {self.data[ticker]['first_index']} and last index is {self.data[ticker]['last_index']}")
-                # return torch.empty(0), torch.empty(0), torch.empty(0), torch.empty(0) # self.__getitem__(index + 1)
-
-            # print("SUCCESSFULLY LOADED TICKER: ", ticker)
-            s_begin = i - self.data[ticker]['first_index']
-            s_end = s_begin + self.seq_len
-            r_begin = s_end - self.label_len
-            r_end = r_begin + self.label_len + self.pred_len
-
-            seq_x = data_x[s_begin:s_end]
-            seq_y = data_y[r_begin:r_end]
-            seq_x_mark = data_stamp[s_begin:s_end]
-            seq_y_mark = data_stamp[r_begin:r_end]
-
-            if seq_x.shape[0] != self.seq_len or seq_y.shape[0] != self.label_len + self.pred_len:
-                continue
-
-            satisfied_ticker = True
+        # satisfied_ticker = True
 
         # Validate shapes to ensure consistency
-        if seq_x.shape[0] != self.seq_len or seq_y.shape[0] != self.label_len + self.pred_len:
-            print(f"VALUE_ERROR! Inconsistent shapes: seq_x shape {seq_x.shape}, seq_y shape {seq_y.shape}")
+        # if seq_x.shape[0] != self.seq_len or seq_y.shape[0] != self.label_len + self.pred_len:
+        #      print(f"VALUE_ERROR! Inconsistent shapes: seq_x shape {seq_x.shape}, seq_y shape {seq_y.shape}")
 
         print(f"index: {i}, ticker: {ticker}, x range: {s_begin}-{s_end}, y range: {r_begin}-{r_end}, seq_x shape: {seq_x.shape}, seq_y shape: {seq_y.shape}, seq_x_mark shape: {seq_x_mark.shape}, seq_y_mark shape: {seq_y_mark.shape}")
 
         return seq_x, seq_y, seq_x_mark, seq_y_mark
 
     def __len__(self):
-        total_length = 0
-        for ticker in self.tickers:
-            data_length = len(self.data[ticker]['data_x']) + 1 - self.seq_len + self.pred_len
-            total_length += data_length # - self.seq_len + 1
-        return total_length
+        # total_length = 0
+        # for ticker in self.tickers:
+        #     data_length = len(self.data[ticker]['data_x']) + 1 - self.seq_len - self.pred_len
+        #     total_length += data_length # - self.seq_len + 1
+        print("The total length is:", self.total_len)
+        # return total_length
+        return self.total_len
 
 
 class Dataset_ETT_hour(Dataset):
