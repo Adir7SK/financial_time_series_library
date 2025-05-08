@@ -1,5 +1,7 @@
 import argparse
 import os
+
+import pandas as pd
 import torch
 from exp.exp_long_term_forecasting import Exp_Long_Term_Forecast
 from exp.exp_imputation import Exp_Imputation
@@ -10,8 +12,10 @@ from finance_collection.constants import trd_days_year, trd_days_month
 from utils.print_args import print_args
 import random
 import numpy as np
+import sys
 
-if __name__ == '__main__':
+
+def main(args_in=None):
     fix_seed = 2021
     random.seed(fix_seed)
     torch.manual_seed(fix_seed)
@@ -28,7 +32,7 @@ if __name__ == '__main__':
                         help='model name, options: [Autoformer, Transformer, TimesNet]')
 
     # data loader
-    parser.add_argument('--data', type=str, default='ETTm1', help='dataset type')   # type=str, required=True
+    parser.add_argument('--data', type=str, default='ETTm1', help='dataset type')  # type=str, required=True
     parser.add_argument('--root_path', type=str, default='./data/ETT/', help='root path of the data file')
     parser.add_argument('--data_path', type=str, default='ETTh1.csv', help='data file')
     parser.add_argument('--features', type=str, default='M',
@@ -46,6 +50,9 @@ if __name__ == '__main__':
     parser.add_argument('--inverse', action='store_true', help='inverse output data', default=False)
 
     # inputation task
+    parser.add_argument('--train_ratio', type=float, default=0.8, help='train set ratio from entire date')
+    parser.add_argument('--test_ratio', type=float, default=0.1, help='test set ratio from entire date')
+    parser.add_argument('--limit_asset_number', type=int, default=0, help='limit the number of assets to be trained')
     parser.add_argument('--mask_rate', type=float, default=0.25, help='mask ratio')
 
     # anomaly detection task
@@ -109,67 +116,41 @@ if __name__ == '__main__':
     parser.add_argument('--p_hidden_layers', type=int, default=2, help='number of hidden layers in projector')
 
     # metrics (dtw)
-    parser.add_argument('--use_dtw', type=bool, default=False, 
+    parser.add_argument('--use_dtw', type=bool, default=False,
                         help='the controller of using dtw metric (dtw is time consuming, not suggested unless necessary)')
-    
+
     # Augmentation
     parser.add_argument('--augmentation_ratio', type=int, default=0, help="How many times to augment")
     parser.add_argument('--seed', type=int, default=2, help="Randomization seed")
     parser.add_argument('--jitter', default=False, action="store_true", help="Jitter preset augmentation")
     parser.add_argument('--scaling', default=False, action="store_true", help="Scaling preset augmentation")
-    parser.add_argument('--permutation', default=False, action="store_true", help="Equal Length Permutation preset augmentation")
-    parser.add_argument('--randompermutation', default=False, action="store_true", help="Random Length Permutation preset augmentation")
+    parser.add_argument('--permutation', default=False, action="store_true",
+                        help="Equal Length Permutation preset augmentation")
+    parser.add_argument('--randompermutation', default=False, action="store_true",
+                        help="Random Length Permutation preset augmentation")
     parser.add_argument('--magwarp', default=False, action="store_true", help="Magnitude warp preset augmentation")
     parser.add_argument('--timewarp', default=False, action="store_true", help="Time warp preset augmentation")
     parser.add_argument('--windowslice', default=False, action="store_true", help="Window slice preset augmentation")
     parser.add_argument('--windowwarp', default=False, action="store_true", help="Window warp preset augmentation")
-    parser.add_argument('--rotation', default=False, action="store_true", help="Rotation preset augmentation")
+    parser.add_argument('--rotation', default=False, action="store_tru"
+                                                            "e", help="Rotation preset augmentation")
     parser.add_argument('--spawner', default=False, action="store_true", help="SPAWNER preset augmentation")
     parser.add_argument('--dtwwarp', default=False, action="store_true", help="DTW warp preset augmentation")
     parser.add_argument('--shapedtwwarp', default=False, action="store_true", help="Shape DTW warp preset augmentation")
     parser.add_argument('--wdba', default=False, action="store_true", help="Weighted DBA preset augmentation")
-    parser.add_argument('--discdtw', default=False, action="store_true", help="Discrimitive DTW warp preset augmentation")
-    parser.add_argument('--discsdtw', default=False, action="store_true", help="Discrimitive shapeDTW warp preset augmentation")
-    parser.add_argument('--start_date', type=str, default="", help="Start Date of the training") #########################
-    parser.add_argument('--end_date', type=str, default="", help="End Date of the training") #########################
+    parser.add_argument('--discdtw', default=False, action="store_true",
+                        help="Discrimitive DTW warp preset augmentation")
+    parser.add_argument('--discsdtw', default=False, action="store_true",
+                        help="Discrimitive shapeDTW warp preset augmentation")
+    parser.add_argument('--start_date', type=str, default="",
+                        help="Start Date of the training")  #########################
+    parser.add_argument('--end_date', type=str, default="", help="End Date of the training")  #########################
     parser.add_argument('--extra_tag', type=str, default="", help="Anything extra")
 
     # TimeXer
     parser.add_argument('--patch_len', type=int, default=16, help='patch length')
 
-    args = parser.parse_args()
-
-    ############################################################################
-    ########################### Adir's debug add-in ############################
-    ############################################################################
-    number_of_features_per_asset = 20 # 321
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-    args.task_name = 'long_term_forecast'
-    args.is_training = 1
-    args.root_path = './dataset/FinanceStrategiesFutures/'
-    args.data_path=''   # electricity.csv
-    args.model_id='Quandl_4Y_1Y'
-    args.model='DLinear'
-    args.data='Futures'
-    args.features='MS'
-    args.target = 'target_returns'
-    args.seq_len = trd_days_year#4 * trd_days_year  # 4 years
-    args.label_len = trd_days_month # 1 * trd_days_year  # 1 year
-    args.pred_len = trd_days_month # 1 * trd_days_year  # 1 year
-    args.e_layers=2
-    args.d_layers=1
-    args.factor=3
-    args.enc_in = number_of_features_per_asset
-    args.dec_in = number_of_features_per_asset
-    args.c_out = number_of_features_per_asset
-    args.des='Exp'
-    args.itr=1
-    args.loss = 'Sharpe'  # Custom loss function for Sharpe ratio
-    args.use_gpu = True if torch.cuda.is_available() else False
-    args.start_date = '2014'
-    args.end_date = '2020'
-
+    args = parser.parse_args(args_in)
 
     # args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
     args.use_gpu = True if torch.cuda.is_available() else False
@@ -256,3 +237,89 @@ if __name__ == '__main__':
         print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
         exp.test(setting, test=1)
         torch.cuda.empty_cache()
+
+
+if __name__ == '__main__':
+    pd.set_option('display.width', 5000)
+    pd.set_option('display.max_columns', 500)
+    pd.set_option('display.max_rows', 60)
+    pd.set_option('show_dimensions', True)
+    pd.set_option('display.float_format', '{:16,.0f}'.format)
+
+    """
+    number_of_features_per_asset = 20 # 321
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    args.task_name = 'long_term_forecast'
+    args.num_workers=0
+    args.train_epochs = 300
+    args.is_training = 1
+    args.root_path = './dataset/FinanceStrategiesFutures/'
+    args.data_path=''   # electricity.csv
+    args.model_id='Quandl_4Y_1Y_With_Shuffle'
+    args.model='TemporalFusionTransformer' # DLinear
+    args.data='FinanceVertical' # 'Futures'
+    args.features='MS'
+    args.target = 'target_returns'
+    args.seq_len = trd_days_year#4 * trd_days_year  # 4 years
+    args.label_len = trd_days_month # 1 * trd_days_year  # 1 year
+    args.pred_len = trd_days_month # 1 * trd_days_year  # 1 year
+    args.e_layers=2
+    args.d_layers=1
+    args.factor=3
+    args.enc_in = number_of_features_per_asset
+    args.dec_in = number_of_features_per_asset
+    args.c_out = 1
+    args.des='Exp'
+    args.itr=1
+    args.loss = 'Sharpe'  # Custom loss function for Sharpe ratio
+    args.use_gpu = True if torch.cuda.is_available() else False
+    args.start_date = '2014'
+    args.end_date = '2020'
+    """
+    # main(sys.argv[1:])  # Automatically gets CLI args ############################################ MUST BE ON WHEN RUNNING VIA COMMAND LINE AND IN COLAB
+
+    model_run_TFT = ['--task_name=long_term_forecast', '--is_training=1',
+                     '--model_id=Quandl_TFT_Improved', '--num_workers=0',
+                     '--root_path=./dataset/FinanceStrategiesFutures/',
+                     '--data_path=', '--model=TemporalFusionTransformer',
+                     '--data=FinanceVertical', '--features=MS', '--train_epochs=300',
+                     '--target=target_returns', '--seq_len=252', '--label_len=1',
+                     '--pred_len=1', '--e_layers=2', '--d_layers=1', '--factor=3',
+                     '--enc_in=20', '--dec_in=20', '--c_out=1', '--des=Exp', '--itr=1',
+                     '--loss=Sharpe', '--start_date=2010', '--end_date=2015',
+                     '--limit_asset_number=8']
+    #
+    # model_run_Patch = ['--task_name=long_term_forecast', '--is_training=1',
+    #                    '--model_id=Quandl_PatchTST_Improved', '--num_workers=0',
+    #                    '--root_path=./dataset/FinanceStrategiesFutures/', '--train_epochs=300',
+    #                    '--data_path=', '--model=PatchTST', '--data=FinanceVertical',
+    #                    '--features=MS', '--target=target_returns', '--seq_len=252',
+    #                    '--label_len=21', '--pred_len=21', '--e_layers=2', '--d_layers=1',
+    #                    '--factor=3', '--enc_in=20', '--dec_in=20', '--c_out=1', '--des=Exp',
+    #                    '--itr=1', '--loss=Sharpe', '--start_date=2014', '--end_date=2020']
+    #
+    # model_run_DLinear = ['--task_name=long_term_forecast', '--is_training=1',
+    #                      '--model_id=Quandl_DLinear_Improved_0.7_train', '--num_workers=0',
+    #                      '--root_path=./dataset/FinanceStrategiesFutures/', '--train_epochs=300',
+    #                      '--data_path=', '--model=DLinear', '--data=FinanceVertical',
+    #                      '--features=MS', '--target=target_returns', '--seq_len=252',
+    #                      '--label_len=1', '--pred_len=1', '--e_layers=2', '--d_layers=1',
+    #                      '--factor=3', '--enc_in=20', '--dec_in=20', '--c_out=1', '--des=Exp',
+    #                      '--itr=1', '--loss=Sharpe', '--start_date=2014', '--end_date=2020']
+    #
+    # model_run_Mamba = ['--task_name=long_term_forecast', '--is_training=1',
+    #                    '--model_id=Quandl_MambaSimple', '--num_workers=0',
+    #                    '--root_path=./dataset/FinanceStrategiesFutures/', '--train_epochs=300',
+    #                    '--data_path=', '--model=MambaSimple', '--data=FinanceVertical',
+    #                    '--features=MS', '--target=target_returns', '--seq_len=252',
+    #                    '--label_len=21', '--pred_len=21', '--e_layers=2', '--d_layers=1',
+    #                    '--factor=3', '--enc_in=19', '--dec_in=20', '--c_out=1', '--des=Exp',
+    #                    '--itr=1', '--loss=Sharpe', '--start_date=2014', '--end_date=2020']
+    #
+    # main(model_run_Patch)
+    # main(model_run_DLinear)
+    main(model_run_TFT)
+    # main(model_run_Mamba)
+
+    # --task_name=long_term_forecast --is_training=1 --model_id=Quandl_TFT_Improved --num_workers=0 --root_path=./dataset/FinanceStrategiesFutures/ --data_path= --model=TemporalFusionTransformer --data=FinanceVertical --features=MS --train_epochs=300 --target=target_returns --seq_len=252 --label_len=1 --pred_len=1 --e_layers=2 --d_layers=1 --factor=3 --enc_in=20 --dec_in=20 --c_out=1 --des=Exp --itr=1 --loss=Sharpe --start_date=2010 --end_date=2015 --limit_asset_number=8

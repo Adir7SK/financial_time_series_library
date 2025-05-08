@@ -10,8 +10,8 @@ import os
 import time
 import warnings
 import numpy as np
-from utils.dtw_metric import dtw,accelerated_dtw
-from utils.augmentation import run_augmentation,run_augmentation_single
+from utils.dtw_metric import dtw, accelerated_dtw
+from utils.augmentation import run_augmentation, run_augmentation_single
 
 warnings.filterwarnings('ignore')
 
@@ -68,9 +68,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
 
                 pred = outputs.detach().cpu()
+                weights = torch.tanh(pred)
                 true = batch_y.detach().cpu()
 
-                loss = criterion(pred, true)
+                loss = criterion(weights, true)
 
                 total_loss.append(loss)
         total_loss = np.average(total_loss)
@@ -134,7 +135,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     outputs = outputs[:, -self.args.pred_len:, f_dim:]
                     batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
 
-                    loss = criterion(outputs, batch_y)
+                    # Generate buy/sell weights (constrained between -1 and 1)
+                    weights = torch.tanh(outputs)
+
+                    loss = criterion(weights, batch_y)
 
                     train_loss.append(loss.item())
 
@@ -221,7 +225,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     shape = outputs.shape
                     outputs = test_data.inverse_transform(outputs.reshape(shape[0] * shape[1], -1)).reshape(shape)
                     batch_y = test_data.inverse_transform(batch_y.reshape(shape[0] * shape[1], -1)).reshape(shape)
-        
+
                 outputs = outputs[:, :, f_dim:]
                 batch_y = batch_y[:, :, f_dim:]
 
@@ -250,14 +254,14 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         folder_path = './results/' + setting + '/'
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
-        
+
         # dtw calculation
         if self.args.use_dtw:
             dtw_list = []
             manhattan_distance = lambda x, y: np.abs(x - y)
             for i in range(preds.shape[0]):
-                x = preds[i].reshape(-1,1)
-                y = trues[i].reshape(-1,1)
+                x = preds[i].reshape(-1, 1)
+                y = trues[i].reshape(-1, 1)
                 if i % 100 == 0:
                     print("calculating dtw iter:", i)
                 d, _, _, _ = accelerated_dtw(x, y, dist=manhattan_distance)
@@ -279,16 +283,22 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             # np.save(folder_path + 'pred.npy', preds)
             # np.save(folder_path + 'true.npy', trues)
 
-            sharpe = sharpe_ratio()
-            print('Sharpe Ratio: {}'.format(sharpe))
-            f = open("result_long_term_forecast.txt", 'a')
-            f.write(setting + "  \n")
-            f.write('Sharpe Ratio: {}'.format(sharpe))
-            f.write('\n')
-            f.write('\n')
-            f.close()
+            # Sharpe ratio calculation
+            buy_sell_vector = torch.tanh(torch.tensor(preds))
 
-            # np.save(folder_path + 'metrics.npy', np.array([mae, mse, rmse, mape, mspe]))
+            # Calculate Sharpe Ratio
+            returns = buy_sell_vector.numpy() * trues  # Element-wise multiplication
+            sharpe = sharpe_ratio(returns)
+
+            # Print and save Sharpe Ratio
+            print('Sharpe Ratio: {}'.format(sharpe))
+            with open("result_long_term_forecast.txt", 'a') as f:
+                f.write(setting + "  \n")
+                f.write('Sharpe Ratio: {}\n'.format(sharpe))
+                f.write('\n')
+
+            # Save buy/sell vector and Sharpe Ratio
+            np.save(folder_path + 'buy_sell_vector.npy', buy_sell_vector.numpy())
             np.save(folder_path + 'sharpe.npy', np.array([sharpe]))
             np.save(folder_path + 'pred.npy', preds)
             np.save(folder_path + 'true.npy', trues)

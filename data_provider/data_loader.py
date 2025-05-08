@@ -22,7 +22,9 @@ class FinanceVerticalIteration(Dataset):
     def __init__(self, args, root_path, flag='train', size=None, features='MS',
                  data_path='', target='target_returns', scale=True, timeenc=0,
                  freq='d', seasonal_patterns=None):
-
+        """
+        RECALL THAT WE SET SHUFFLE FLAG TO FALSE!!!
+        """
         self.args = args
         self.args.start_date = date_interpreter(args.start_date)
         self.args.end_date = date_interpreter(args.end_date)
@@ -60,13 +62,15 @@ class FinanceVerticalIteration(Dataset):
         files = glob.glob(os.path.join(self.root_path, 'quandl_cpd_nonelbw_*.csv'))
         cols_data = None
         dates = set()
-        for file in files[:4]:
+        files = files[:self.args.limit_asset_number] \
+            if self.args.limit_asset_number else files
+        for file in files: # [:4]
             df = pd.read_csv(file, parse_dates=['Date'])
             if not len(df):
                 continue
             ticker = os.path.basename(file).split('_')[-1].split('.')[0]
             if cols_data is None:
-                cols_data = [col for col in df.columns if col != 'Date']
+                cols_data = [col for col in df.columns if col != 'Date' and col != self.target] + [self.target]
             df = df[(df['Date'] >= self.args.start_date) & (df['Date'] <= self.args.end_date)]
             df_data = df[cols_data]
 
@@ -77,8 +81,90 @@ class FinanceVerticalIteration(Dataset):
             self.tickers_left.append(ticker)
             self.data[ticker] = dict()
 
-            num_train = int(len(df_data) * 0.7)
-            num_test = int(len(df_data) * 0.2)
+            num_train = int(len(df_data) * self.args.train_ratio)
+            num_test = int(len(df_data) * self.args.test_ratio)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            
             num_vali = len(df_data) - num_train - num_test
             border1s = [0, num_train - self.seq_len, len(df_data) - num_test - self.seq_len]
             border2s = [num_train, num_train + num_vali, len(df_data)]
@@ -145,6 +231,10 @@ class FinanceVerticalIteration(Dataset):
     def __getitem__(self, index):
         ticker, local_idx = self.global_to_local[index]
 
+        # ticker = self.tickers_left[0]
+        # i = index - self.data_prev_len
+        # self.keep_track_idx += 1
+
         data_x = self.data[ticker]['data_x']
         data_y = self.data[ticker]['data_y']
         data_stamp = self.data[ticker]['data_stamp']
@@ -159,7 +249,12 @@ class FinanceVerticalIteration(Dataset):
         seq_x_mark = data_stamp[s_begin:s_end]
         seq_y_mark = data_stamp[r_begin:r_end]
 
-        print(f"global index: {index}, local index: {local_idx}, ticker: {ticker}, x range: {s_begin}-{s_end}, y range: {r_begin}-{r_end}, seq_x shape: {seq_x.shape}, seq_y shape: {seq_y.shape}, seq_x_mark shape: {seq_x_mark.shape}, seq_y_mark shape: {seq_y_mark.shape}")
+        # if r_end == len(data_y) - 1:
+        #     self.data_prev_len += s_begin
+            # self.total_len -= s_begin
+        #     self.tickers_left.remove(ticker)
+
+        # print(f"index: {index}, local index: {local_idx}, ticker: {ticker}, x range: {s_begin}-{s_end}, y range: {r_begin}-{r_end}, seq_x shape: {seq_x.shape}, seq_y shape: {seq_y.shape}, seq_x_mark shape: {seq_x_mark.shape}, seq_y_mark shape: {seq_y_mark.shape}")
 
         return seq_x, seq_y, seq_x_mark, seq_y_mark
 

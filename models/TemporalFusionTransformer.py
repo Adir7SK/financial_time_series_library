@@ -14,7 +14,8 @@ TypePos = namedtuple('TypePos', ['static', 'observed'])
 # When you want to use new dataset, please add the index of 'static, observed' columns here.
 # 'known' columns needn't be added, because 'known' inputs are automatically judged and provided by the program.
 datatype_dict = {'ETTh1': TypePos([], [x for x in range(7)]),
-                 'ETTm1': TypePos([], [x for x in range(7)])}
+                 'ETTm1': TypePos([], [x for x in range(7)]),
+                 'FinanceVertical': TypePos([], [x for x in range(7)])}
 
 
 def get_known_len(embed_type, freq):
