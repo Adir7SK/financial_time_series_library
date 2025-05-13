@@ -1,5 +1,6 @@
 import argparse
 import os
+import time
 
 import pandas as pd
 import torch
@@ -16,10 +17,21 @@ import sys
 
 
 def main(args_in=None):
-    fix_seed = 2021
-    random.seed(fix_seed)
-    torch.manual_seed(fix_seed)
-    np.random.seed(fix_seed)
+    random.seed(int(time.time()))
+    np.random.seed(int(time.time()) % 2 ** 32)
+    torch.manual_seed(int(time.time()))
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(int(time.time()))
+
+    # Disable deterministic behavior
+    torch.backends.cudnn.deterministic = False
+    torch.backends.cudnn.benchmark = False
+    # torch.use_deterministic_algorithms(True)
+    # fix_seed = int(time.time()) # 2021
+    # random.seed(fix_seed)
+    # torch.manual_seed(fix_seed)
+    # np.random.seed(fix_seed)
+    # print(f"Seed used: {fix_seed}")
 
     parser = argparse.ArgumentParser(description='TimesNet')
 
@@ -150,6 +162,8 @@ def main(args_in=None):
     # TimeXer
     parser.add_argument('--patch_len', type=int, default=16, help='patch length')
 
+    parser.add_argument('--vol_target', type=float, default=0.15, help='Target volatility')
+
     args = parser.parse_args(args_in)
 
     # args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
@@ -277,18 +291,73 @@ if __name__ == '__main__':
     args.start_date = '2014'
     args.end_date = '2020'
     """
-    # main(sys.argv[1:])  # Automatically gets CLI args ############################################ MUST BE ON WHEN RUNNING VIA COMMAND LINE AND IN COLAB
+    main(sys.argv[1:])  # Automatically gets CLI args ############################################ MUST BE ON WHEN RUNNING VIA COMMAND LINE AND IN COLAB
 
-    model_run_TFT = ['--task_name=long_term_forecast', '--is_training=1',
-                     '--model_id=Quandl_TFT_Improved', '--num_workers=0',
-                     '--root_path=./dataset/FinanceStrategiesFutures/',
-                     '--data_path=', '--model=TemporalFusionTransformer',
-                     '--data=FinanceVertical', '--features=MS', '--train_epochs=300',
-                     '--target=target_returns', '--seq_len=252', '--label_len=1',
-                     '--pred_len=1', '--e_layers=2', '--d_layers=1', '--factor=3',
-                     '--enc_in=20', '--dec_in=20', '--c_out=1', '--des=Exp', '--itr=1',
-                     '--loss=Sharpe', '--start_date=2010', '--end_date=2015',
-                     '--limit_asset_number=8']
+    # model_run_TFT_1 = ['--task_name=long_term_forecast', '--is_training=1',
+    #                  '--model_id=Quandl_TFT_epoch100_seq1008_label21_pred1_workers10', '--num_workers=10',
+    #                  '--root_path=./dataset/FinanceStrategiesFutures/',
+    #                  '--data_path=', '--model=TemporalFusionTransformer',
+    #                  '--data=FinanceVertical', '--features=MS', '--train_epochs=100',
+    #                  '--target=target_returns', '--seq_len=1008', '--label_len=21',
+    #                  '--pred_len=1', '--e_layers=2', '--d_layers=1', '--factor=3',
+    #                  '--enc_in=20', '--dec_in=20', '--c_out=1', '--des=Exp', '--itr=1',
+    #                  '--loss=Sharpe', '--start_date=2010', '--end_date=2020',
+    #                  '--limit_asset_number=4']
+    #
+    # model_run_TFT_2 = ['--task_name=long_term_forecast', '--is_training=1',
+    #                    '--model_id=Quandl_TFT_epoch300_label1_pred1_workers10', '--num_workers=10',
+    #                    '--root_path=./dataset/FinanceStrategiesFutures/',
+    #                    '--data_path=', '--model=TemporalFusionTransformer',
+    #                    '--data=FinanceVertical', '--features=MS', '--train_epochs=300',
+    #                    '--target=target_returns', '--seq_len=252', '--label_len=1',
+    #                    '--pred_len=1', '--e_layers=2', '--d_layers=1', '--factor=3',
+    #                    '--enc_in=20', '--dec_in=20', '--c_out=1', '--des=Exp', '--itr=1',
+    #                    '--loss=Sharpe', '--start_date=2010', '--end_date=2020',
+    #                    '--limit_asset_number=4']
+
+    # model_run_TFT_3 = ['--task_name=long_term_forecast', '--is_training=1',
+    #                    '--model_id=Quandl_TFT_epoch300_label1_pred1_workers0_ma126', '--num_workers=0',
+    #                    '--root_path=./dataset/FinanceStrategiesFutures/',
+    #                    '--data_path=', '--model=TemporalFusionTransformer',
+    #                    '--data=FinanceVertical', '--features=MS', '--train_epochs=300',
+    #                    '--target=target_returns', '--moving_avg=126','--seq_len=252', '--label_len=1',
+    #                    '--pred_len=1', '--e_layers=2', '--d_layers=1', '--factor=3',
+    #                    '--enc_in=20', '--dec_in=20', '--c_out=1', '--des=Exp', '--itr=1',
+    #                    '--loss=Sharpe', '--start_date=2010', '--end_date=2015',
+    #                    '--limit_asset_number=4']
+    #
+    # model_run_TFT_4 = ['--task_name=long_term_forecast', '--is_training=1',
+    #                    '--model_id=Quandl_TFT_epoch100_label1_pred1_train085_test005', '--num_workers=0',
+    #                    '--root_path=./dataset/FinanceStrategiesFutures/',
+    #                    '--data_path=', '--model=TemporalFusionTransformer', '--train_ratio=0.85', '--test_ratio=0.05',
+    #                    '--data=FinanceVertical', '--features=MS', '--train_epochs=100',
+    #                    '--target=target_returns', '--seasonal_patterns=Yearly', '--seq_len=252', '--label_len=1',
+    #                    '--pred_len=1', '--e_layers=2', '--d_layers=1', '--factor=3',
+    #                    '--enc_in=20', '--dec_in=20', '--c_out=1', '--des=Exp', '--itr=1',
+    #                    '--loss=Sharpe', '--start_date=2010', '--end_date=2015',
+    #                    '--limit_asset_number=4']
+    #
+    # model_run_TFT_5 = ['--task_name=long_term_forecast', '--is_training=1',
+    #                    '--model_id=Quandl_TFT_epoch100_label1_pred1_train07_test015', '--num_workers=0',
+    #                    '--root_path=./dataset/FinanceStrategiesFutures/', '--train_ratio=0.7', '--test_ratio=0.15',
+    #                    '--data_path=', '--model=TemporalFusionTransformer',
+    #                    '--data=FinanceVertical', '--features=MS', '--train_epochs=3000',
+    #                    '--target=target_returns', '--seasonal_patterns=Yearly', '--seq_len=252', '--label_len=1',
+    #                    '--pred_len=1', '--e_layers=2', '--d_layers=1', '--factor=3',
+    #                    '--enc_in=20', '--dec_in=20', '--c_out=1', '--des=Exp', '--itr=1',
+    #                    '--loss=Sharpe', '--start_date=2010', '--end_date=2015',
+    #                    '--limit_asset_number=4']
+    #
+    # model_run_TFT_6 = ['--task_name=long_term_forecast', '--is_training=1',
+    #                    '--model_id=Quandl_TFT_epoch3000_label1_pred1_dmodel1024', '--num_workers=0',
+    #                    '--root_path=./dataset/FinanceStrategiesFutures/', '--d_model=1024',
+    #                    '--data_path=', '--model=TemporalFusionTransformer',
+    #                    '--data=FinanceVertical', '--features=MS', '--train_epochs=3000',
+    #                    '--target=target_returns', '--seasonal_patterns=Yearly', '--seq_len=252', '--label_len=1',
+    #                    '--pred_len=1', '--e_layers=2', '--d_layers=1', '--factor=3',
+    #                    '--enc_in=20', '--dec_in=20', '--c_out=1', '--des=Exp', '--itr=1',
+    #                    '--loss=Sharpe', '--start_date=2010', '--end_date=2015',
+    #                    '--limit_asset_number=4']
     #
     # model_run_Patch = ['--task_name=long_term_forecast', '--is_training=1',
     #                    '--model_id=Quandl_PatchTST_Improved', '--num_workers=0',
@@ -319,7 +388,63 @@ if __name__ == '__main__':
     #
     # main(model_run_Patch)
     # main(model_run_DLinear)
-    main(model_run_TFT)
+    # main(model_run_TFT_1)
+    # main(model_run_TFT_2)
+    # main(model_run_TFT_3)
+    # main(model_run_TFT_4)
+    # main(model_run_TFT_5)
+    # main(model_run_TFT_6)
     # main(model_run_Mamba)
 
     # --task_name=long_term_forecast --is_training=1 --model_id=Quandl_TFT_Improved --num_workers=0 --root_path=./dataset/FinanceStrategiesFutures/ --data_path= --model=TemporalFusionTransformer --data=FinanceVertical --features=MS --train_epochs=300 --target=target_returns --seq_len=252 --label_len=1 --pred_len=1 --e_layers=2 --d_layers=1 --factor=3 --enc_in=20 --dec_in=20 --c_out=1 --des=Exp --itr=1 --loss=Sharpe --start_date=2010 --end_date=2015 --limit_asset_number=8
+
+# def _captured_returns_from_all_windows(
+#     experiment_name: str,
+#     train_intervals: List[Tuple[int, int, int]],
+#     volatility_rescaling: bool = True,
+#     only_standard_windows: bool = True,
+#     volatilites_known: List[float] = None,
+#     filter_identifiers: List[str] = None,
+#     captured_returns_col: str = "captured_returns",
+#     standard_window_size: int = 1,
+# ) -> pd.Series:
+#     """get sereis of captured returns from all intervals
+#
+#     Args:
+#         experiment_name (str): name of experiment
+#         train_intervals (List[Tuple[int, int, int]]): list of training intervals
+#         volatility_rescaling (bool, optional): rescale to target annualised volatility. Defaults to True.
+#         only_standard_windows (bool, optional): only include full windows. Defaults to True.
+#         volatilites_known (List[float], optional): list of annualised volatities, if known. Defaults to None.
+#         filter_identifiers (List[str], optional): only run for specified tickers. Defaults to None.
+#         captured_returns_col (str, optional): column name of captured returns. Defaults to "captured_returns".
+#         standard_window_size (int, optional): number of years in standard window. Defaults to 1.
+#
+#     Returns:
+#         pd.Series: series of captured returns
+#     """
+#     srs_list = []
+#     volatilites = volatilites_known if volatilites_known else []
+#     for interval in train_intervals:
+#         if only_standard_windows and (
+#             interval[2] - interval[1] == standard_window_size
+#         ):
+#             df = pd.read_csv(
+#                 os.path.join(
+#                     _get_directory_name(experiment_name, interval),
+#                     "captured_returns_sw.csv",
+#                 ),
+#             )
+#
+#             if filter_identifiers:
+#                 filter = pd.DataFrame({"identifier": filter_identifiers})
+#                 df = df.merge(filter, on="identifier")
+#             num_identifiers = len(df["identifier"].unique())
+#             srs = df.groupby("time")[captured_returns_col].sum() / num_identifiers
+#             srs_list.append(srs)
+#             if volatility_rescaling and not volatilites_known:
+#                 volatilites.append(annual_volatility(srs))
+#     if volatility_rescaling:
+#         return pd.concat(srs_list) * VOL_TARGET / np.mean(volatilites)
+#     else:
+#         return pd.concat(srs_list)

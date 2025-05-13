@@ -1,8 +1,9 @@
 from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
 from utils.tools import EarlyStopping, adjust_learning_rate, visual
-from utils.losses import SharpeLoss, sharpe_ratio
+from utils.losses import LogSharpeLoss, SharpeLoss, sharpe_ratio
 from utils.metrics import metric
+from empyrical import annual_volatility
 import torch
 import torch.nn as nn
 from torch import optim
@@ -38,6 +39,8 @@ class Exp_Long_Term_Forecast(Exp_Basic):
     def _select_criterion(self, loss_name='Sharpe'):
         if loss_name == 'Sharpe':
             return SharpeLoss()
+        if loss_name == 'LogSharpe':
+            return LogSharpeLoss()
         elif loss_name == 'MSE':
             return nn.MSELoss()
 
@@ -126,7 +129,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         f_dim = -1 if self.args.features == 'MS' else 0
                         outputs = outputs[:, -self.args.pred_len:, f_dim:]
                         batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
-                        loss = criterion(outputs, batch_y)
+                        # Generate buy/sell weights (constrained between -1 and 1)
+                        weights = torch.tanh(outputs)
+                        loss = criterion(weights, batch_y)
                         train_loss.append(loss.item())
                 else:
                     outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
@@ -229,7 +234,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 outputs = outputs[:, :, f_dim:]
                 batch_y = batch_y[:, :, f_dim:]
 
-                pred = outputs
+                pred = torch.tanh(outputs)
                 true = batch_y
 
                 preds.append(pred)
@@ -288,6 +293,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
             # Calculate Sharpe Ratio
             returns = buy_sell_vector.numpy() * trues  # Element-wise multiplication
+            volatilites = annual_volatility(returns, period=252)
+            # Adjust return values to match the target volatility
+            returns = returns*self.args.vol_target / np.mean(volatilites)
             sharpe = sharpe_ratio(returns)
 
             # Print and save Sharpe Ratio
@@ -295,12 +303,14 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             with open("result_long_term_forecast.txt", 'a') as f:
                 f.write(setting + "  \n")
                 f.write('Sharpe Ratio: {}\n'.format(sharpe))
+                f.write('Average Returns: {}\n'.format(np.average(returns)))
+                f.write('Average Volatility: {}\n'.format(np.average(volatilites)))
                 f.write('\n')
 
             # Save buy/sell vector and Sharpe Ratio
             np.save(folder_path + 'buy_sell_vector.npy', buy_sell_vector.numpy())
             np.save(folder_path + 'sharpe.npy', np.array([sharpe]))
-            np.save(folder_path + 'pred.npy', preds)
+            # np.save(folder_path + 'pred.npy', preds)
             np.save(folder_path + 'true.npy', trues)
 
         return

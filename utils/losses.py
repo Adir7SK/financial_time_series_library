@@ -123,6 +123,40 @@ class SharpeLoss(nn.Module):
         )
 
 
+class LogSharpeLoss(nn.Module):
+    """
+    This class/layer will only be used as loss function at training for the optimization, hence it is to be minimized.
+    Therefore, we are negating the Log Sharpe ratio here. For validation we use positive Sharpe ratio.
+    """
+    def __init__(self, output_size: int = 1):
+        super().__init__()
+        self.output_size = output_size
+
+    def forward(self, weights, y_true):
+        """
+        Note the comment under the class' signature.
+        Calc Sharpe ratio only the standard deviation is calculated manually with addition of a small epsilon, i.e.
+        std = Sqrt((SUM(x^2)-SUM(x)^2 + epsilon)/N), where x are the inputs and N is the number of inputs
+        :param y_true: Sequence of returns
+        :param weights: The weight of each corresponding asset in our portfolio
+        :return: (int) Sharpe Ratio
+        """
+        captured_returns = weights * y_true
+        mean_returns = t.mean(captured_returns)
+        std_returns = t.sqrt(
+            t.mean(t.square(captured_returns))
+            - t.square(mean_returns)
+            + 1e-7
+        )
+        if t.isnan(std_returns) or t.isinf(std_returns):
+            raise ValueError("Standard deviation of returns is NaN or infinite.")
+        return -np.log(
+                mean_returns
+                / std_returns
+                * t.sqrt(t.tensor(trd_days_year))
+        )
+
+
 def sharpe_ratio(returns, risk_free=0.0, periods=252):
     """
     Calculate the annualized Sharpe ratio. This is used for test and validation.
@@ -143,7 +177,6 @@ def sharpe_ratio(returns, risk_free=0.0, periods=252):
     # print("The shape of excess_returns is: ", excess_returns.shape)
     if len(excess_returns) < 2:
         raise ValueError(f"The length of returns is: {len(returns)} causing the Sharpe Ratio to be NaN")
-        return np.nan
 
     mean_excess_return = np.mean(excess_returns)
     mean_excess_return = np.nanmean(excess_returns)
@@ -161,7 +194,7 @@ def sharpe_ratio(returns, risk_free=0.0, periods=252):
     if std_excess_return == 0:
         return np.nan
 
-    sharpe = mean_excess_return / std_excess_return
+    sharpe = mean_excess_return / std_excess_return # Average daily sharpe
     # print("You reached the end of the calculation, the mean is: ", mean_excess_return)
     # print("You reached the end of the calculation, the std is: ", std_excess_return)
     # print("You reached the end of the calculation, the Sharpe ratio is: ", sharpe)

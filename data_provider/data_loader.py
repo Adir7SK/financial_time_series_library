@@ -64,7 +64,7 @@ class FinanceVerticalIteration(Dataset):
         dates = set()
         files = files[:self.args.limit_asset_number] \
             if self.args.limit_asset_number else files
-        for file in files: # [:4]
+        for file in files:
             df = pd.read_csv(file, parse_dates=['Date'])
             if not len(df):
                 continue
@@ -83,87 +83,6 @@ class FinanceVerticalIteration(Dataset):
 
             num_train = int(len(df_data) * self.args.train_ratio)
             num_test = int(len(df_data) * self.args.test_ratio)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
             
             num_vali = len(df_data) - num_train - num_test
             border1s = [0, num_train - self.seq_len, len(df_data) - num_test - self.seq_len]
