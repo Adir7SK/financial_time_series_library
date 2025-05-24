@@ -148,7 +148,7 @@ class LogSharpeLoss(nn.Module):
             - t.square(mean_returns)
             + 1e-7
         )
-        if t.isnan(std_returns) or t.isinf(std_returns):
+        if t.isnan(std_returns) or t.isinf(std_returns) or std_returns == 0:
             raise ValueError("Standard deviation of returns is NaN or infinite.")
         return -np.log(
                 mean_returns
@@ -178,10 +178,10 @@ def sharpe_ratio(returns, risk_free=0.0, periods=252):
     if len(excess_returns) < 2:
         raise ValueError(f"The length of returns is: {len(returns)} causing the Sharpe Ratio to be NaN")
 
-    mean_excess_return = np.mean(excess_returns)
+    # mean_excess_return = np.mean(excess_returns)
     mean_excess_return = np.nanmean(excess_returns)
-    std_excess_return = np.std(excess_returns, ddof=1)
-    num_nans = np.isnan(excess_returns).sum()
+    # std_excess_return = np.std(excess_returns, ddof=1)
+    # num_nans = np.isnan(excess_returns).sum()
     std_excess_return = np.nanstd(excess_returns, ddof=1)
 
     if std_excess_return == 0 or np.isnan(std_excess_return):

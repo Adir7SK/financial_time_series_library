@@ -43,6 +43,9 @@ class FinanceVerticalIteration(Dataset):
         self.timeenc = timeenc
         self.freq = freq
 
+        ###
+        self.last_20_indeces = []
+
         self.root_path = root_path
         self.tickers = []
         self.tickers_left = []
@@ -50,8 +53,6 @@ class FinanceVerticalIteration(Dataset):
         self.total_len = 0
         self.data_prev_len = 0
         self.the_ticker = None
-        self.ticker_indices = dict()
-        self.ticker_lengths = dict()
         self.global_to_local = dict()
         self.__read_data__()
         self.__build_index_mapping__()
@@ -61,7 +62,6 @@ class FinanceVerticalIteration(Dataset):
 
         files = glob.glob(os.path.join(self.root_path, 'quandl_cpd_nonelbw_*.csv'))
         cols_data = None
-        dates = set()
         files = files[:self.args.limit_asset_number] \
             if self.args.limit_asset_number else files
         for file in files:
@@ -78,13 +78,12 @@ class FinanceVerticalIteration(Dataset):
                 continue
 
             self.tickers.append(ticker)
-            self.tickers_left.append(ticker)
             self.data[ticker] = dict()
 
             num_train = int(len(df_data) * self.args.train_ratio)
             num_test = int(len(df_data) * self.args.test_ratio)
-            
             num_vali = len(df_data) - num_train - num_test
+
             border1s = [0, num_train - self.seq_len, len(df_data) - num_test - self.seq_len]
             border2s = [num_train, num_train + num_vali, len(df_data)]
             border1 = border1s[self.set_type]
@@ -99,8 +98,6 @@ class FinanceVerticalIteration(Dataset):
 
             df_stamp = df[['Date']][border1:border2]
             df_stamp['Date'] = pd.to_datetime(df_stamp.Date)
-            dates.update(df_stamp['Date'].values)
-            self.data[ticker]['date_range'] = (df_stamp['Date'].min(), df_stamp['Date'].max())
 
             if self.timeenc == 0:
                 df_stamp['month'] = df_stamp.Date.apply(lambda row: row.month, 1)
@@ -112,17 +109,16 @@ class FinanceVerticalIteration(Dataset):
                 data_stamp = time_features(pd.to_datetime(df_stamp['Date'].values), freq=self.freq)
                 data_stamp = data_stamp.transpose(1, 0)
 
-            data_x = data[border1:border2]
-            data_y = data[border1:border2]
-            # self.total_len += border2 - border1 - self.seq_len - self.pred_len - 1
+            data_x = data[border1:border2].copy()
+            data_y = data[border1:border2].copy()
 
-            if self.set_type == 0 and self.args.augmentation_ratio > 0:
-                data_x, data_y, augmentation_tags = run_augmentation_single(data_x, data_y,
-                                                                                      self.args)
+            # if self.set_type == 0 and self.args.augmentation_ratio > 0:
+            #     data_x, data_y, augmentation_tags = run_augmentation_single(data_x, data_y,
+            #                                                                           self.args)
 
-            self.data[ticker]['data_x'] = data_x
-            self.data[ticker]['data_y'] = data_y
-            self.data[ticker]['data_stamp'] = data_stamp
+            self.data[ticker]['data_x'] = np.array(data_x)
+            self.data[ticker]['data_y'] = np.array(data_y)
+            self.data[ticker]['data_stamp'] = np.array(data_stamp)
         self.keep_track_idx = -1
         self.idx_map = dict()
 
@@ -132,12 +128,9 @@ class FinanceVerticalIteration(Dataset):
 
         # Process tickers in the order they should be used
         for ticker in self.tickers:
-            data_len = len(self.data[ticker]['data_x']) - self.seq_len - self.pred_len # - 1
+            data_len = len(self.data[ticker]['data_x']) - self.seq_len - self.pred_len
             if data_len <= 0:
                 continue  # Skip tickers with insufficient data
-
-            self.ticker_indices[ticker] = global_idx
-            self.ticker_lengths[ticker] = data_len
 
             # Map each global index to its corresponding ticker and local index
             for local_idx in range(data_len):
@@ -149,29 +142,38 @@ class FinanceVerticalIteration(Dataset):
 
     def __getitem__(self, index):
         ticker, local_idx = self.global_to_local[index]
+        if len(self.last_20_indeces) and index in self.last_20_indeces:
+            print(f'Ticker {ticker} with local index {local_idx} already in last 20 indices!!!')
+        if len(self.last_20_indeces) < 20:
+            self.last_20_indeces.append(index)
+        else:
+            self.last_20_indeces.pop(0)
+            self.last_20_indeces.append(index)
 
         # ticker = self.tickers_left[0]
         # i = index - self.data_prev_len
         # self.keep_track_idx += 1
 
-        data_x = self.data[ticker]['data_x']
-        data_y = self.data[ticker]['data_y']
-        data_stamp = self.data[ticker]['data_stamp']
+        data_x = self.data[ticker]['data_x'].copy()
+        data_y = self.data[ticker]['data_y'].copy()
+        data_stamp = self.data[ticker]['data_stamp'].copy()
 
         s_begin = local_idx # i
         s_end = s_begin + self.seq_len
         r_begin = s_end - self.label_len
         r_end = r_begin + self.label_len + self.pred_len
 
-        seq_x = data_x[s_begin:s_end]
-        seq_y = data_y[r_begin:r_end]
-        seq_x_mark = data_stamp[s_begin:s_end]
-        seq_y_mark = data_stamp[r_begin:r_end]
+        seq_x = np.array(data_x[s_begin:s_end])
+        seq_y = np.array(data_y[r_begin:r_end])
+        seq_x_mark = np.array(data_stamp[s_begin:s_end])
+        seq_y_mark = np.array(data_stamp[r_begin:r_end])
 
-        # if r_end == len(data_y) - 1:
-        #     self.data_prev_len += s_begin
-            # self.total_len -= s_begin
-        #     self.tickers_left.remove(ticker)
+        # assert s_end <= len(data_x), f"s_end {s_end} out of bounds for data_x with len {len(data_x)}"
+        # assert r_end <= len(data_y), f"r_end {r_end} out of bounds for data_y with len {len(data_y)}"
+        # assert r_end <= len(data_stamp), f"r_end {r_end} out of bounds for data_stamp with len {len(data_stamp)}"
+
+        # print(f"IDX: {index}, Ticker: {ticker}, Local idx: {local_idx}")
+        # print(f"seq_x shape: {seq_x.shape}, seq_y shape: {seq_y.shape}")
 
         # print(f"index: {index}, local index: {local_idx}, ticker: {ticker}, x range: {s_begin}-{s_end}, y range: {r_begin}-{r_end}, seq_x shape: {seq_x.shape}, seq_y shape: {seq_y.shape}, seq_x_mark shape: {seq_x_mark.shape}, seq_y_mark shape: {seq_y_mark.shape}")
 
@@ -309,6 +311,35 @@ class FinanceHorizontalIteration(Dataset):
         # print(self.tickers)
         # print(len(self.tickers))
 
+    def __build_index_mapping__(self):
+        """Create mapping from global indices to chronologically sorted (ticker, local_index) pairs"""
+        # Store (date, ticker, local_index) tuples
+        all_dates = []
+
+        # First collect all valid dates with their corresponding ticker and local index
+        for ticker in self.tickers:
+            dates = pd.to_datetime(self.data[ticker]['data_stamp'][:, 0])  # Assuming dates are in first column
+            data_len = len(dates) - self.seq_len - self.pred_len
+
+            if data_len <= 0:
+                continue  # Skip tickers with insufficient data
+
+            for local_idx in range(data_len):
+                # Get the date corresponding to this local index
+                current_date = dates[local_idx]
+                all_dates.append((current_date, ticker, local_idx))
+
+        # Sort by date
+        all_dates.sort(key=lambda x: x[0])
+
+        # Build the mapping
+        self.global_to_local = {}
+        for global_idx, (date, ticker, local_idx) in enumerate(all_dates):
+            self.global_to_local[global_idx] = (ticker, local_idx)
+
+        # Update total length
+        self.total_len = len(self.global_to_local)
+
     def __getitem__(self, index):
         '''
         SEE BELOW what is causeing the ERROR!!
@@ -332,6 +363,8 @@ class FinanceHorizontalIteration(Dataset):
         seq_y = data_y[r_begin:r_end]       # ERRORs HERE!! This becomes a Tensor of size [32, 21, 1] instead of [32, 21, 19] which causes a: RuntimeError: Trying to resize storage that is not resizable
         seq_x_mark = data_stamp[s_begin:s_end]
         seq_y_mark = data_stamp[r_begin:r_end]
+
+
 
         # if seq_x.shape[0] != self.seq_len or seq_y.shape[0] != self.label_len + self.pred_len:
     #     continue

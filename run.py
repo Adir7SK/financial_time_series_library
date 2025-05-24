@@ -291,18 +291,19 @@ if __name__ == '__main__':
     args.start_date = '2014'
     args.end_date = '2020'
     """
-    main(sys.argv[1:])  # Automatically gets CLI args ############################################ MUST BE ON WHEN RUNNING VIA COMMAND LINE AND IN COLAB
+    # main(sys.argv[1:])  # Automatically gets CLI args ############################################ MUST BE ON WHEN RUNNING VIA COMMAND LINE AND IN COLAB
 
-    # model_run_TFT_1 = ['--task_name=long_term_forecast', '--is_training=1',
-    #                  '--model_id=Quandl_TFT_epoch100_seq1008_label21_pred1_workers10', '--num_workers=10',
-    #                  '--root_path=./dataset/FinanceStrategiesFutures/',
-    #                  '--data_path=', '--model=TemporalFusionTransformer',
-    #                  '--data=FinanceVertical', '--features=MS', '--train_epochs=100',
-    #                  '--target=target_returns', '--seq_len=1008', '--label_len=21',
-    #                  '--pred_len=1', '--e_layers=2', '--d_layers=1', '--factor=3',
-    #                  '--enc_in=20', '--dec_in=20', '--c_out=1', '--des=Exp', '--itr=1',
-    #                  '--loss=Sharpe', '--start_date=2010', '--end_date=2020',
-    #                  '--limit_asset_number=4']
+    model_run_TFT_1 = ['--task_name=long_term_forecast', '--is_training=1', '--batch_size=256', # 64, 128, 256
+                     '--model_id=TFT_epoch300_seq252_label21_pred1_workers10_dropout0.3_lr0.01', '--num_workers=0', '--seasonal_patterns=', '--patience=5',
+                     '--root_path=./dataset/FinanceStrategiesFutures/', '--learning_rate=0.01',
+                     '--data_path=', '--model=TemporalFusionTransformer',
+                     '--data=FinanceVertical', '--features=MS', '--train_epochs=300',
+                     '--target=target_returns', '--seq_len=252', '--label_len=21',
+                     '--pred_len=1', '--e_layers=2', '--d_layers=1', '--factor=3',
+                     '--enc_in=20', '--dec_in=20', '--c_out=1', '--des=Exp', '--itr=1',
+                     '--loss=Sharpe', '--start_date=2015', '--end_date=2020',
+                       '--train_ratio=0.9', '--test_ratio=0.05', '--dropout=0.3',
+                     '--limit_asset_number=4']
     #
     # model_run_TFT_2 = ['--task_name=long_term_forecast', '--is_training=1',
     #                    '--model_id=Quandl_TFT_epoch300_label1_pred1_workers10', '--num_workers=10',
@@ -388,7 +389,7 @@ if __name__ == '__main__':
     #
     # main(model_run_Patch)
     # main(model_run_DLinear)
-    # main(model_run_TFT_1)
+    main(model_run_TFT_1)
     # main(model_run_TFT_2)
     # main(model_run_TFT_3)
     # main(model_run_TFT_4)
